@@ -1,0 +1,11 @@
+[Unit]
+Description=PropPlus Price Trainer
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/propplus/prop_plus_price_trainer
+EnvironmentFile=/opt/propplus/prop_plus_price_trainer/.env
+ExecStart=/opt/propplus/venv/bin/python -m src.train --lookback-days 180
+StandardOutput=journal
+StandardError=journal

@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: prop-plus-price-trainer
+Version: 0.1.0
+Summary: PropPlus hedonic LightGBM price trainer
+Requires-Python: >=3.11
+Requires-Dist: lightgbm>=4.3.0
+Requires-Dist: shap>=0.45.0
+Requires-Dist: pandas>=2.2.0
+Requires-Dist: numpy>=1.26.0
+Requires-Dist: psycopg[binary]>=3.1.18
+Requires-Dist: boto3>=1.34.0
+Requires-Dist: scikit-learn>=1.4.0
+Requires-Dist: onnxmltools>=1.12.0
+Requires-Dist: skl2onnx>=1.17.0
