@@ -1,0 +1,27 @@
+# P0 — CI for prop_plus_price_trainer (see PropPlus docs/testing/TEST_STRATEGY.md)
+# Pattern copied from prop_plus_tokenizer's ci.yml (uv + unittest).
+# Suite verified: 7 tests pass offline (2026-07-21).
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run tests
+        run: uv run python -m unittest discover -s tests
