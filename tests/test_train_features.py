@@ -9,7 +9,9 @@ sys.modules.setdefault("lightgbm", types.SimpleNamespace(LGBMRegressor=object))
 sys.modules.setdefault("psycopg", types.SimpleNamespace(connect=lambda *args, **kwargs: None))
 sys.modules.setdefault("shap", types.SimpleNamespace(TreeExplainer=object))
 
-from src.train import LANDMARK_SENTINEL_DISTANCE_M, build_feature_matrix
+import numpy as np
+
+from src.train import build_feature_matrix, trim_price_outliers
 
 
 def _base_row(**overrides):
@@ -53,7 +55,7 @@ class BuildFeatureMatrixTests(unittest.TestCase):
     def test_uses_object_shaped_landmarks_and_agreed_room_count_names(self):
         df = pd.DataFrame([_base_row()])
 
-        X, _y, _sort_key, _district_rank_mapping = build_feature_matrix(df)
+        X, _y, _meta, _encoders = build_feature_matrix(df)
 
         self.assertIn("bedrooms_count", X.columns)
         self.assertIn("bathrooms_count", X.columns)
@@ -61,7 +63,7 @@ class BuildFeatureMatrixTests(unittest.TestCase):
         self.assertNotIn("bathrooms", X.columns)
         self.assertEqual(X.loc[0, "dist_beach_m"], 1200.0)
         self.assertEqual(X.loc[0, "dist_airport_m"], 25000.0)
-        self.assertEqual(X.loc[0, "dist_bts_m"], LANDMARK_SENTINEL_DISTANCE_M)
+        self.assertTrue(np.isnan(X.loc[0, "dist_bts_m"]))  # missing stays NaN for LightGBM
 
     def test_supports_array_shaped_landmarks_for_forward_compatibility(self):
         df = pd.DataFrame(
@@ -76,7 +78,7 @@ class BuildFeatureMatrixTests(unittest.TestCase):
             ]
         )
 
-        X, _y, _sort_key, _district_rank_mapping = build_feature_matrix(df)
+        X, _y, _meta, _encoders = build_feature_matrix(df)
 
         self.assertEqual(X.loc[0, "dist_bts_m"], 650.0)
         self.assertEqual(X.loc[0, "dist_beach_m"], 5000.0)
@@ -90,12 +92,71 @@ class BuildFeatureMatrixTests(unittest.TestCase):
             ]
         )
 
-        X, _y, _sort_key, district_rank_mapping = build_feature_matrix(df)
+        X, _y, _meta, encoders = build_feature_matrix(df)
 
-        self.assertEqual(district_rank_mapping, {"101": 2, "102": 1})
+        self.assertEqual(encoders["district_rank"], {"101": 2, "102": 1})
         self.assertEqual(X.loc[0, "district_rank"], 2)
         self.assertEqual(X.loc[1, "district_rank"], 1)
         self.assertEqual(X.loc[2, "district_rank"], 1)
+
+    def test_district_rank_uses_train_fraction_only(self):
+        # 10 rows: districts 101/102 in the train fraction, district 999 only
+        # in the holdout tail — 999 must NOT get a rank (no leakage).
+        rows = []
+        for i in range(8):
+            rows.append(
+                _base_row(
+                    district_code=101 if i % 2 == 0 else 102,
+                    price_per_sqm=100_000 if i % 2 == 0 else 50_000,
+                    first_listed_at=pd.Timestamp(f"2026-01-0{i + 1}T00:00:00Z"),
+                )
+            )
+        rows.append(_base_row(district_code=999, price_per_sqm=999_999, first_listed_at=pd.Timestamp("2026-01-09T00:00:00Z")))
+        rows.append(_base_row(district_code=999, price_per_sqm=999_999, first_listed_at=pd.Timestamp("2026-01-10T00:00:00Z")))
+        df = pd.DataFrame(rows)
+
+        X, _y, _meta, encoders = build_feature_matrix(df)
+
+        self.assertNotIn("999", encoders["district_rank"])
+        self.assertEqual(X.loc[8, "district_rank"], 0)  # unseen district -> 0
+
+    def test_project_developer_and_latlng_features(self):
+        df = pd.DataFrame(
+            [
+                _base_row(project_id="proj-a", developer_name="Dev A", price_per_sqm=120_000, first_listed_at=pd.Timestamp("2026-01-01T00:00:00Z")),
+                _base_row(project_id="proj-b", developer_name="Dev B", price_per_sqm=60_000, first_listed_at=pd.Timestamp("2026-01-02T00:00:00Z")),
+                _base_row(project_id="proj-b", developer_name="Dev B", price_per_sqm=70_000, first_listed_at=pd.Timestamp("2026-01-03T00:00:00Z")),
+            ]
+        )
+
+        X, _y, meta, encoders = build_feature_matrix(df)
+
+        self.assertIn("lat", X.columns)
+        self.assertIn("lng", X.columns)
+        self.assertIn("project_rank", X.columns)
+        self.assertIn("developer_rank", X.columns)
+        self.assertEqual(encoders["project_rank"], {"proj-a": 2, "proj-b": 1})
+        self.assertEqual(encoders["developer_rank"], {"Dev A": 2, "Dev B": 1})
+        self.assertEqual(X.loc[0, "project_rank"], 2)
+        self.assertEqual(X.loc[2, "project_rank"], 1)
+        # meta aligned with X for segment evaluation
+        self.assertListEqual(
+            list(meta.columns), ["first_listed_at", "province_code", "property_type_id"]
+        )
+        self.assertEqual(len(meta), len(X))
+
+
+class TrimPriceOutliersTests(unittest.TestCase):
+    def test_small_datasets_untouched(self):
+        df = pd.DataFrame([_base_row(price_per_sqm=p) for p in (1, 100_000, 10**9)])
+        self.assertEqual(len(trim_price_outliers(df)), 3)
+
+    def test_drops_extremes_on_large_datasets(self):
+        prices = [100_000] * 200 + [1, 10**9]
+        df = pd.DataFrame([_base_row(price_per_sqm=p) for p in prices])
+        trimmed = trim_price_outliers(df)
+        self.assertNotIn(1, trimmed["price_per_sqm"].values)
+        self.assertNotIn(10**9, trimmed["price_per_sqm"].values)
 
 
 if __name__ == "__main__":

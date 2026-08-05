@@ -1,0 +1,14 @@
+graphify-out/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Model artifacts — ต้นฉบับอยู่บน R2 ไม่เก็บใน git
+*.onnx
+*.txt.gz
+artifacts/
