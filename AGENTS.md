@@ -26,3 +26,10 @@ runs in `public.model_runs`. Own git repo, independent of the PropPlus root.
 ## Git Restrictions
 
 Do not use `git add` or `git commit`.
+
+
+## Git Workflow
+
+ใช้กติกากลางของ workspace: **`../AGENTS.md` (repo PropPlus ราก) หัวข้อ "Git Workflow"**
+— branch จาก main สด · commit ประทับ `[EPIC-ID]` · เข้าทาง PR + auto-merge ·
+ห้าม commit ต่อบน branch ที่ squash-merge แล้ว
